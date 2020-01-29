@@ -1,0 +1,49 @@
+// UE4 project
+// Teleportation function for playable character in order to not send him inside a static mesh asset when calculating the destination vector
+
+FVector APlayerCharacter::TeleportationForward(float TeleportDistance, FVector OffsetVector)
+{
+	FVector EndDestination;
+
+	FHitResult Hit(ForceInit);
+	FHitResult Hit_2(ForceInit);
+
+	//casting a ray from the top of the player body and the bottom of the body to be sure he will not have a part of the body stucked in a static mesh
+	FVector RaycastSourceFloor = GetMesh()->GetSocketLocation(TEXT("root")) + FVector(0.0f, 0.0f, 15.0f);
+	FVector RaycastSourceHead = GetMesh()->GetSocketLocation(TEXT("head")) + FVector(0.0f, 0.0f, 25.0f);
+
+  //OffestVector is FVector::ZeroVector if we want to send him straightly ahead
+	GetWorld()->LineTraceSingleByChannel(Hit, RaycastSourceFloor, (RaycastSourceFloor + GetActorForwardVector() * TeleportDistance) + OffsetVector, ECollisionChannel::ECC_Visibility);
+	GetWorld()->LineTraceSingleByChannel(Hit_2, RaycastSourceHead, (RaycastSourceHead + GetActorForwardVector() * TeleportDistance) + OffsetVector, ECollisionChannel::ECC_Visibility);
+
+	//getting the Z value where we want to teleport the character, which is at his hips level
+	float MeanZValue = ((Hit_2.TraceEnd.Z - Hit.TraceEnd.Z) / 2);
+
+	EndDestination = FVector(Hit.TraceEnd.X, Hit.TraceEnd.Y, Hit.TraceEnd.Z + MeanZValue);
+
+	//testing if rays we cast were blocked or not, if any is blocked, we have our X and Y value for final vector destination. The body will not get stucked
+	if (Hit.bBlockingHit && Hit_2.bBlockingHit)
+	{
+		float DistanceToRoot = FMath::Abs(Hit.ImpactPoint.X - RaycastSourceFloor.X);
+		float DistanceToHead = FMath::Abs(Hit_2.ImpactPoint.X - RaycastSourceHead.X);
+
+		if (DistanceToRoot <= DistanceToHead)
+		{
+			EndDestination = FVector(Hit.ImpactPoint.X, Hit.ImpactPoint.Y, Hit.ImpactPoint.Z + MeanZValue);
+		}
+		else
+		{
+			EndDestination = FVector(Hit_2.ImpactPoint.X, Hit_2.ImpactPoint.Y, Hit.ImpactPoint.Z + MeanZValue);
+		}
+
+	}
+	else if (Hit.bBlockingHit)
+	{
+		EndDestination = FVector(Hit.ImpactPoint.X, Hit.ImpactPoint.Y, Hit.ImpactPoint.Z + MeanZValue);
+	}
+	else if (Hit_2.bBlockingHit)
+	{
+		EndDestination = FVector(Hit_2.ImpactPoint.X, Hit_2.ImpactPoint.Y, Hit.ImpactPoint.Z + MeanZValue);
+	}
+	return EndDestination;
+}
