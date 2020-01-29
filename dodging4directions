@@ -1,0 +1,133 @@
+//----------------------------------------------------------------------------
+// Setting up switchForDodge value to know what direction the player chose
+
+void APlayerCharacter::MoveForward(float Value)
+{
+	if ((Controller != NULL) && (Value != 0.0f))
+	{
+		switchForDodge = 1;
+		// find out which way is forward
+		const FRotator Rotation = Controller->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		// get forward vector
+		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		AddMovementInput(Direction, Value);
+	}
+}
+
+void APlayerCharacter::MoveRight(float Value)
+{
+	if ((Controller != NULL) && (Value != 0.0f))
+	{
+		switchForDodge = 2;
+		// find out which way is right
+		const FRotator Rotation = Controller->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		// get right vector 
+		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+		// add movement in that direction
+		AddMovementInput(Direction, Value);
+	}
+}
+
+//-------------------------------------------------------------------------------
+
+void APlayerCharacter::OnDodging()  //function called when Dodge input is pressed
+{
+	if (bIsAbleToDodge)
+	{
+		switchForDodge = 0;
+		ProcessDodge();
+	}
+}
+
+void APlayerCharacter::ProcessDodge()
+{
+	FVector NormalizedVelocity = GetVelocity();
+	NormalizedVelocity.Normalize(0.1f);
+	float DotTestX = FVector::DotProduct(GetActorForwardVector(), NormalizedVelocity);
+	float DotTestY = FVector::DotProduct(GetActorRightVector(), NormalizedVelocity);
+
+  //choosing the direction
+	if (switchForDodge == 0)
+	{
+		if (FMath::Abs(DotTestX) > FMath::Abs(DotTestY))
+		{
+			switchForDodge = 1;
+		}
+		else
+		{
+			switchForDodge = 2;
+		}
+	}
+
+	if (switchForDodge == 1)
+	{
+		DodgeAlongX(DotTestX);
+	}
+	else if (switchForDodge == 2)
+	{
+		DodgeAlongY(DotTestY);
+	}
+}
+
+void APlayerCharacter::DodgeAlongX(float DotTestX)
+{
+	bIsDodging = true;
+
+  //ensuring we reset other actions that could overlap this one like blocking
+	if (bIsBlocking)
+	{
+		bIsBlocking = false;
+	}
+  
+	if (DotTestX > 0) //direction is forward
+	{
+		DodgeTraceEnd = TeleportationForward(320.0f, FVector(0.0f, 0.0f, 0.0f));
+		TimelineDodge.PlayFromStart(); //TimelineDodge calls DoDoge() when updated and ResetDodge() when finished
+
+		GetMesh()->GetAnimInstance()->Montage_Play(Dodge_Forward_Montage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+	}
+	else if (DotTestX < 0) //direction is backward
+	{
+		DodgeTraceEnd = TeleportationForward(-320.0f, FVector(0.0f, 0.0f, 0.0f));
+		TimelineDodge.PlayFromStart(); //TimelineDodge calls DoDoge() when updated and ResetDodge() when finished
+
+		GetMesh()->GetAnimInstance()->Montage_Play(Dodge_Backward_Montage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+	}
+}
+
+void APlayerCharacter::DodgeAlongY(float DotTestY)
+{
+	bIsDodging = true;
+
+	if (DotTestY > 0) // direction is right
+	{
+		DodgeTraceEnd = TeleportationRight(320.0f); //creating a destination vector the player while dodge is progressing
+		TimelineDodge.PlayFromStart(); //TimelineDodge calls DoDoge() when updated and ResetDodge() when finished
+
+		GetMesh()->GetAnimInstance()->Montage_Play(Dodge_Right_Montage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+	}
+	else if (DotTestY < 0) // direction is left
+	{
+		DodgeTraceEnd = TeleportationRight(-320.0f); // negatif right is left
+		TimelineDodge.PlayFromStart(); //TimelineDodge calls DoDoge() when updated and ResetDodge() when finished
+
+		GetMesh()->GetAnimInstance()->Montage_Play(Dodge_Left_Montage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+	}
+}
+
+//----------------------------------------------------------------
+
+void APlayerCharacter::DoDodge()
+{
+	SetActorLocation(FMath::InterpEaseInOut(GetActorLocation(), DodgeTraceEnd, FloatCurve_Dodge->GetFloatValue(TimelineDodge.GetPlaybackPosition()), 2.0f));
+}
+
+void APlayerCharacter::ResetDodge()
+{
+  bIsDodging = false;
+	GetWorldTimerManager().SetTimer(DelayFTimerHandle_BeforeNextDodge, this, &APabloPlayerCharacter::ReEnableDodge, 1.0f, false, 0.14f);
+}
