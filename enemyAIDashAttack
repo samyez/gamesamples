@@ -1,0 +1,71 @@
+// Using UE4 API
+
+void AEnemyCharacter::DashAttack()
+{
+	if (bHasDetect) // ensure doing this if player character is spotted
+	{
+		Armor->SetMaterial(12, M_IndicationGlowingDash); //changing materials when Dash attacking
+		Damage = 500.0f; // setting damage it will do to the player
+		bIsInvincible = true;
+		bIsDashAttacking = true;
+		bCanBeHit = false; 
+		StopAnimMontage(GetCurrentMontage()); // giving to this attack the priority
+
+		if (bDoOnce)
+		{
+			bDoOnce = false;
+			RandInt = UKismetMathLibrary::RandomIntegerInRange(2, 4); //choosing randomly the number of dash, only once while the number is not reached 
+		}
+
+		float TeleportDistance = 4000.0f; // distance the dash attack will cover
+		FVector EnemyLoc = GetActorLocation(); // GetActorLocation() will be called several times so we setting it into a variable instead of calling it each time
+
+    FHitResult Hit(ForceInit);
+		//ray cast to create the destination vector
+    GetWorld()->LineTraceSingleByChannel(Hit, EnemyLoc, GetActorForwardVector() * TeleportDistance + EnemyLoc, ECollisionChannel::ECC_Visibility);
+		TraceEnd = Hit.TraceEnd;
+		BlockingHit = Hit.bBlockingHit;
+    
+    //enable enemy weapon capsule so it will do damage only during a Dash
+		EnemyKatanaCapsule2->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		UGameplayStatics::PlaySoundAtLocation(GetWorld(), DashSound, GetMesh()->GetSocketLocation("spine_01"));
+		GetMesh()->GetAnimInstance()->Montage_Play(DashAttack_Montage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+		DashAttackTimeline.PlayFromStart(); // calling DashAttackUpdated() when updating and DashAttackFinished() when finished
+	}
+}
+
+void AEnemyCharacter::DashAttackUpdated()
+{
+	SetActorLocation(FMath::InterpEaseInOut(GetActorLocation(), TraceEnd, FloatCurve_DashAttack->GetFloatValue(DashAttackTimeline.GetPlaybackPosition()), 2.0f), SamuraiBlockingHit);
+}
+
+void AEnemyCharacter::DashAttackFinished()
+{
+//disabling collision when finished 
+	EnemyKatanaCapsule2->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GetCharacterMovement()->DisableMovement();
+
+	GetWorldTimerManager().SetTimer(DashTimer, this, &AEnemyCharacter::NextDashAttack, 1.0f, false, 0.5f); // calling NextDashAttack() after 0.5 sec so the player can think what to do
+}
+
+void AEnemyCharacter::NextDashAttack()
+{
+	GetWorldTimerManager().ClearTimer(DashTimer);
+	CompteurDash++;
+	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+  
+	if (CompteurDash == RandInt) // if we have reach the Dash limit, we are resetting the variables
+	{
+		bIsInvincible = false;
+		CompteurDash = 0;
+		bDoOnce = true;
+		bCanBeHit = true;
+		bCanNextMove = true;
+		bIsDashAttacking = false;
+		AllowNextStrafe(); // calling the function which will choose what attack the AI will do next
+	}
+	else //if we haven't reach Dash limit yet, we keep dash attacking
+	{
+		DashAttack();
+	}
+}
